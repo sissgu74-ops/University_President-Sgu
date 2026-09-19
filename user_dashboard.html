@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>لوحة المستلمين - التذاكر الواردة</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="config.js"></script>
+</head>
+<body class="bg-slate-50 min-h-screen p-6">
+    <div class="max-w-5xl mx-auto space-y-6">
+        <!-- Notification Alert Banner -->
+        <div id="alertBanner" class="hidden bg-emerald-600 text-white p-4 rounded-xl shadow-lg flex justify-between items-center transition-all">
+            <div class="flex items-center space-x-3 space-x-reverse">
+                <span class="text-2xl">📩</span>
+                <span id="alertMessage" class="font-bold">وصلتك تذكرة أو تحديث جديد!</span>
+            </div>
+            <button onclick="dismissAlert()" class="bg-white/20 px-3 py-1 rounded hover:bg-white/30">تحديث الآن</button>
+        </div>
+
+        <!-- Header -->
+        <div class="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+            <div>
+                <h1 class="text-xl font-bold text-slate-800">التذاكر والتوجيهات الواردة</h1>
+                <p id="userInfo" class="text-sm text-slate-500"></p>
+            </div>
+            <button onclick="logout()" class="bg-rose-50 text-rose-600 px-4 py-2 rounded-lg font-medium border border-rose-200 hover:bg-rose-100">خروج</button>
+        </div>
+
+        <!-- Incoming Tickets List -->
+        <div id="incomingTicketsContainer" class="space-y-4"></div>
+    </div>
+
+    <script>
+        const currentUser = JSON.parse(localStorage.getItem('user'));
+        if (!currentUser) window.location.href = 'index.html';
+        document.getElementById('userInfo').innerText = `${currentUser.name} (@${currentUser.username}) - الصفة: (${currentUser.role})`;
+
+        let lastTicketCount = 0;
+
+        async function loadAssignedTickets(forceRender = false) {
+            // حماية الكتابة: عدم إغلاق أو مسح النموذج إذا كان المستخدم يكتب رد حالياً
+            if (!forceRender && document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
+                return;
+            }
+
+            // الاستعلام عن التذاكر الخاصة بالـ User ID المحدد له أو الموجهة لصفته بشكل عام
+            const recRes = await fetch(`${SUPABASE_URL}/rest/v1/ticket_recipients?or=(recipient_user_id.eq.${currentUser.id},recipient_role.eq.${currentUser.role})&select=ticket_id`, { headers: HEADERS });
+            const recData = await recRes.json();
+            const ticketIds = [...new Set(recData.map(r => r.ticket_id))];
+
+            if (ticketIds.length === 0) {
+                document.getElementById('incomingTicketsContainer').innerHTML = '<div class="bg-white p-8 text-center rounded-xl text-slate-500 border">لا توجد توجيهات أو تذاكر موجهة إليك حالياً.</div>';
+                return;
+            }
+
+            const ticketsRes = await fetch(`${SUPABASE_URL}/rest/v1/tickets?id=in.(${ticketIds.join(',')})&select=*,users(name),ticket_replies(*,users(name,role))&order=created_at.desc`, { headers: HEADERS });
+            const tickets = await ticketsRes.json();
+
+            if (lastTicketCount > 0 && tickets.length > lastTicketCount) {
+                showAlert("وصلتك تذكرة أو توجيه جديد!");
+            }
+            lastTicketCount = tickets.length;
+
+            const container = document.getElementById('incomingTicketsContainer');
+            container.innerHTML = '';
+
+            tickets.forEach(ticket => {
+                const imagesHtml = (ticket.image_urls || []).map(url => `<a href="${url}" target="_blank"><img src="${url}" class="h-20 w-20 object-cover rounded border hover:opacity-80"></a>`).join('');
+                
+                const repliesHtml = (ticket.ticket_replies || []).map(reply => `
+                    <div class="bg-slate-50 p-3 rounded-lg border text-sm mt-2">
+                        <div class="flex justify-between font-semibold text-slate-700 mb-1">
+                            <span>${reply.users ? reply.users.name : 'مستخدم'} (${reply.users ? reply.users.role : ''})</span>
+                            <span class="text-xs text-slate-400">${new Date(reply.created_at).toLocaleString('ar-EG')}</span>
+                        </div>
+                        <p class="text-slate-600">${reply.message}</p>
+                        <div class="flex gap-2 mt-2">
+                            ${(reply.image_urls || []).map(u => `<a href="${u}" target="_blank"><img src="${u}" class="h-12 w-12 object-cover rounded border"></a>`).join('')}
+                        </div>
+                    </div>
+                `).join('');
+
+                container.innerHTML += `
+                    <div class="bg-white border rounded-xl p-6 shadow-sm space-y-4">
+                        <div class="flex justify-between border-b pb-2">
+                            <div>
+                                <h3 class="font-bold text-slate-800 text-lg">${ticket.title}</h3>
+                                <p class="text-xs text-slate-500 mt-1">المرسل: ${ticket.users ? ticket.users.name : 'مكتب رئيس الجامعة'}</p>
+                            </div>
+                            <span class="text-xs text-slate-400">${new Date(ticket.created_at).toLocaleString('ar-EG')}</span>
+                        </div>
+                        <p class="text-slate-700 text-sm leading-relaxed">${ticket.description}</p>
+                        ${imagesHtml ? `<div class="flex gap-2">${imagesHtml}</div>` : ''}
+
+                        <!-- Replies Section -->
+                        <div class="pt-4 border-t space-y-3">
+                            <h4 class="text-sm font-semibold text-slate-700">الردود السابقة:</h4>
+                            ${repliesHtml || '<p class="text-xs text-slate-400 italic">لا توجد ردود بعد.</p>'}
+                            
+                            <!-- Reply Form -->
+                            <form onsubmit="sendReply(event, '${ticket.id}')" class="space-y-3 pt-3 border-t mt-4">
+                                <textarea id="replyText_${ticket.id}" rows="2" placeholder="اكتب ردك هنا..." required class="w-full border p-2 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"></textarea>
+                                <div class="flex items-center justify-between gap-4">
+                                    <input type="file" id="replyImages_${ticket.id}" multiple accept="image/*" class="text-xs text-slate-500 file:mr-2 file:py-1 file:px-3 file:rounded file:border-0 file:bg-slate-100 file:text-slate-700">
+                                    <button type="submit" class="bg-emerald-600 text-white px-4 py-1.5 rounded-lg text-sm font-semibold hover:bg-emerald-700 transition">إرسال الرد</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        function showAlert(msg) {
+            document.getElementById('alertMessage').innerText = msg;
+            document.getElementById('alertBanner').classList.remove('hidden');
+            notifyUser("تنسيق جديد", msg);
+        }
+
+        function dismissAlert() {
+            document.getElementById('alertBanner').classList.add('hidden');
+            loadAssignedTickets(true);
+        }
+
+        async function sendReply(e, ticketId) {
+            e.preventDefault();
+            const message = document.getElementById(`replyText_${ticketId}`).value;
+            const imageUrls = await uploadImages(`replyImages_${ticketId}`);
+
+            const res = await fetch(`${SUPABASE_URL}/rest/v1/ticket_replies`, {
+                method: "POST",
+                headers: { ...HEADERS, "Prefer": "return=representation" },
+                body: JSON.stringify({
+                    ticket_id: ticketId,
+                    sender_id: currentUser.id,
+                    message: message,
+                    image_urls: imageUrls
+                })
+            });
+
+            if (res.ok) {
+                loadAssignedTickets(true);
+            } else {
+                alert('حدث خطأ أثناء إرسال الرد.');
+            }
+        }
+
+        function logout() { localStorage.clear(); window.location.href = 'index.html'; }
+
+        loadAssignedTickets(true);
+        setInterval(() => loadAssignedTickets(false), 5000);
+    </script>
+</body>
+</html>

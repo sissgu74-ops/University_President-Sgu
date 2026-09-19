@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>مدير مكتب رئيس الجامعة - نظام التذاكر</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root {
+      --primary-color: #0d6efd;
+      --primary-dark: #0b5ed7;
+      --bg-color: #f4f6f9;
+      --card-bg: #ffffff;
+      --text-color: #333333;
+      --border-color: #e0e0e0;
+      --danger-color: #dc3545;
+      --success-color: #198754;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    body { background-color: var(--bg-color); color: var(--text-color); padding-bottom: 40px; }
+
+    /* الهيدر العلوي */
+    header {
+      background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+      color: white;
+      padding: 15px 30px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    header .brand { display: flex; align-items: center; gap: 15px; }
+    header .brand h1 { font-size: 1.3rem; font-weight: 600; }
+    header .user-info { display: flex; align-items: center; gap: 15px; }
+    header .logout-btn {
+      background: var(--danger-color);
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-weight: bold;
+      transition: 0.3s;
+    }
+    header .logout-btn:hover { background: #bb2d3b; }
+
+    /* شريط الإشعارات */
+    #notificationBar {
+      display: none;
+      background-color: #d1e7dd;
+      color: #0f5132;
+      border: 1px solid #badbcc;
+      padding: 12px 20px;
+      text-align: center;
+      font-weight: bold;
+      position: sticky;
+      top: 60px;
+      z-index: 99;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      animation: fadeIn 0.5s ease-in-out;
+    }
+
+    /* الحاوية الرئيسية */
+    .container { max-width: 1000px; margin: 30px auto; padding: 0 20px; }
+
+    /* الكروت */
+    .card {
+      background: var(--card-bg);
+      border-radius: 10px;
+      padding: 25px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+      margin-bottom: 25px;
+      border: 1px solid var(--border-color);
+    }
+    .card h3 {
+      margin-bottom: 20px;
+      color: #2c3e50;
+      border-bottom: 2px solid #f0f0f0;
+      padding-bottom: 10px;
+      font-size: 1.2rem;
+    }
+
+    /* النماذج والمدخلات */
+    .form-group { margin-bottom: 15px; }
+    .form-group label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 0.95rem; }
+    input[type="text"], textarea, select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input[type="text"]:focus, textarea:focus, select:focus { border-color: var(--primary-color); }
+    input[type="file"] { border: 1px dashed var(--border-color); padding: 10px; background: #fafafa; width: 100%; border-radius: 6px; }
+
+    .btn-submit {
+      background: var(--primary-color);
+      color: white;
+      border: none;
+      padding: 12px;
+      width: 100%;
+      border-radius: 6px;
+      font-size: 1rem;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn-submit:hover { background: var(--primary-dark); }
+
+    /* عرض التذاكر */
+    .ticket-card {
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+      background: #ffffff;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.03);
+    }
+    .ticket-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .ticket-title { font-size: 1.1rem; color: #1a252f; font-weight: bold; }
+    .ticket-user { background: #e9ecef; color: #495057; padding: 4px 10px; border-radius: 20px; font-size: 0.85rem; }
+    .ticket-description { font-size: 0.95rem; color: #555; line-height: 1.6; margin-bottom: 15px; }
+
+    /* معرض الصور */
+    .image-gallery { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+    .image-gallery img {
+      width: 90px;
+      height: 90px;
+      object-fit: cover;
+      border-radius: 6px;
+      border: 1px solid #ddd;
+      transition: transform 0.2s;
+    }
+    .image-gallery img:hover { transform: scale(1.05); }
+
+    /* قسم الردود */
+    .replies-section { margin-top: 20px; border-top: 1px solid #eee; padding-top: 15px; }
+    .reply-item {
+      background: #f8f9fa;
+      border-right: 4px solid var(--primary-color);
+      padding: 12px 15px;
+      border-radius: 4px;
+      margin-top: 10px;
+    }
+    .reply-header { display: flex; justify-content: space-between; font-weight: bold; font-size: 0.85rem; color: #555; margin-bottom: 5px; }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- الهيدر العلوي -->
+  <header>
+    <div class="brand">
+      <h1>مكتب مدير رئيس الجامعة - نظام التذاكر</h1>
+    </div>
+    <div class="user-info">
+      <span id="adminName">مرحباً بك</span>
+      <button class="logout-btn" onclick="logout()">تسجيل الخروج</button>
+    </div>
+  </header>
+
+  <!-- شريط التنبيهات علوي عند وصول رد جديد -->
+  <div id="notificationBar">🔔 تم تلقي رد جديد على إحدى التذاكر!</div>
+
+  <div class="container">
+    <!-- نموذج إضافة تيكت -->
+    <div class="card">
+      <h3>إرسال تيكت جديد</h3>
+      <form id="createTicketForm">
+        <div class="form-group">
+          <label for="userSelect">إرسال إلى المستخدم:</label>
+          <select id="userSelect" required>
+            <option value="">جاري تحميل المستخدمين...</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="title">عنوان التيكت:</label>
+          <input type="text" id="title" placeholder="أدخل عنوان التيكت..." required>
+        </div>
+
+        <div class="form-group">
+          <label for="description">الوصف والتفاصيل:</label>
+          <textarea id="description" rows="4" placeholder="أكتب تفاصيل التيكت هنا..." required></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="images">المرفقات (يمكن إرفاق صور متعددة):</label>
+          <input type="file" id="images" multiple accept="image/*">
+        </div>
+
+        <button type="submit" class="btn-submit" id="submitBtn">إرسال التيكت</button>
+      </form>
+    </div>
+
+    <!-- قائمة التذاكر -->
+    <div class="card">
+      <h3>التذاكر الصادرة والردود</h3>
+      <div id="ticketsList">جاري تحميل التذاكر...</div>
+    </div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://gfyjrvqqnkfbrbeolkan.supabase.co";
+    const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdmeWpydnFxbmtmYnJiZW9sa2FuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk4MDU1MDEsImV4cCI6MjEwNTM4MTUwMX0.y6AdLHhm9LlIgTSXrJTqlBWaTDFUezLXPPNa0TU-drk";
+    const supabaseClient = supabase.createClient(SUPABASE_URL, ANON_KEY);
+
+    const currentUser = JSON.parse(localStorage.getItem('currentUser'));
+
+    function checkAuth() {
+      if (!currentUser || (currentUser.role !== 'admin' && currentUser.role !== 'office_manager')) {
+        window.location.href = 'index.html';
+        return;
+      }
+      document.getElementById('adminName').innerText = `المستخدم: ${currentUser.name}`;
+      loadUsers();
+      loadTickets();
+      subscribeToReplies();
+    }
+
+    async function loadUsers() {
+      const { data: users } = await supabaseClient
+        .from('users')
+        .select('id, name, username')
+        .neq('role', 'admin')
+        .neq('role', 'office_manager');
+
+      const select = document.getElementById('userSelect');
+      select.innerHTML = '<option value="">اختر المستخدم المستقبل...</option>';
+      if (users) {
+        users.forEach(u => select.innerHTML += `<option value="${u.id}">${u.name} (@${u.username})</option>`);
+      }
+    }
+
+    async function uploadImages(files) {
+      const urls = [];
+      for (let file of files) {
+        const fileName = `${Date.now()}_${file.name}`;
+        const { data, error } = await supabaseClient.storage.from('photo').upload(fileName, file);
+        if (!error) {
+          const { data: publicUrlData } = supabaseClient.storage.from('photo').getPublicUrl(fileName);
+          urls.push(publicUrlData.publicUrl);
+        }
+      }
+      return urls;
+    }
+
+    document.getElementById('createTicketForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const submitBtn = document.getElementById('submitBtn');
+      submitBtn.disabled = true;
+      submitBtn.innerText = 'جاري الإرسال...';
+
+      const assigned_to = document.getElementById('userSelect').value;
+      const title = document.getElementById('title').value.trim();
+      const description = document.getElementById('description').value.trim();
+      const files = document.getElementById('images').files;
+
+      const images = await uploadImages(files);
+
+      const { error } = await supabaseClient.from('tickets').insert([{
+        title, description, assigned_to, created_by: currentUser.id, images
+      }]);
+
+      submitBtn.disabled = false;
+      submitBtn.innerText = 'إرسال التيكت';
+
+      if (error) {
+        alert(error.message);
+      } else {
+        alert('تم إرسال التيكت بنجاح!');
+        document.getElementById('createTicketForm').reset();
+        loadTickets();
+      }
+    });
+
+    async function loadTickets() {
+      const { data: tickets, error } = await supabaseClient
+        .from('tickets')
+        .select('*, assigned_user:users!fk_assigned_user(name, username), ticket_replies(*, sender:users!fk_sender_user(name))')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error("Error loading tickets:", error);
+        return;
+      }
+
+      const container = document.getElementById('ticketsList');
+      container.innerHTML = '';
+
+      if (!tickets || tickets.length === 0) {
+        container.innerHTML = '<p style="text-align:center; color:#777;">لا توجد تذاكر حالياً.</p>';
+        return;
+      }
+
+      tickets.forEach(t => {
+        let imgs = t.images && t.images.length > 0 
+          ? `<div class="image-gallery">${t.images.map(img => `<a href="${img}" target="_blank"><img src="${img}"></a>`).join('')}</div>` 
+          : '';
+
+        let replies = t.ticket_replies && t.ticket_replies.length > 0 
+          ? t.ticket_replies.map(r => `
+            <div class="reply-item">
+              <div class="reply-header">
+                <span>${r.sender?.name || 'مستخدم'}</span>
+                <span>${new Date(r.created_at).toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'})}</span>
+              </div>
+              <p>${r.message}</p>
+              ${r.images && r.images.length > 0 ? `<div class="image-gallery">${r.images.map(i => `<a href="${i}" target="_blank"><img src="${i}"></a>`).join('')}</div>` : ''}
+            </div>
+          `).join('') 
+          : '<p style="color:#888; font-size:0.88rem; margin-top:8px;">لا توجد ردود بعد.</p>';
+
+        container.innerHTML += `
+          <div class="ticket-card">
+            <div class="ticket-header">
+              <span class="ticket-title">${t.title}</span>
+              <span class="ticket-user">موجهة إلى: ${t.assigned_user?.name || 'غير معروف'}</span>
+            </div>
+            <div class="ticket-description">${t.description}</div>
+            ${imgs}
+            <div class="replies-section">
+              <strong style="font-size:0.95rem; color:#333;">الردود:</strong>
+              ${replies}
+            </div>
+          </div>
+        `;
+      });
+    }
+
+    // تفعيل التنبيه اللحظي (Realtime) عند إضافة أي رد في جدول ticket_replies
+    function subscribeToReplies() {
+      supabaseClient
+        .channel('public:ticket_replies')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ticket_replies' }, payload => {
+          showNotification();
+          loadTickets();
+        })
+        .subscribe();
+    }
+
+    function showNotification() {
+      const notif = document.getElementById('notificationBar');
+      notif.style.display = 'block';
+      setTimeout(() => {
+        notif.style.display = 'none';
+      }, 5000);
+    }
+
+    function logout() {
+      localStorage.removeItem('currentUser');
+      window.location.href = 'index.html';
+    }
+
+    checkAuth();
+  </script>
+</body>
+</html>
